@@ -11,10 +11,16 @@ venv/
 # Models & outputs (large / generated)
 models/*.gguf
 models/*.safetensors
+models/*.part
+models/chroma-base/
 outputs/*.png
 outputs/*.jpg
 !models/.gitkeep
 !outputs/.gitkeep
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
 
 # OS
 .DS_Store

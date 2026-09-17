@@ -1,18 +1,17 @@
-# Echo Studio — Chroma Q4 (GGUF) local image generation
-# Pinned loosely; tested against diffusers 0.40+ which ships the Chroma pipelines.
+# Echo Studio — local SD 1.5 image generation (DreamShaper 8)
+# torch-directml pins torch 2.4.1. transformers 5.x requires torch>=2.5, so stay on 4.x.
+# diffusers 0.40 wants huggingface_hub>=1.23; transformers 4.x wants hub<1.
+# After `pip install -r requirements.txt`, run:
+#   pip install "transformers>=4.44,<5" --no-deps
 
 fastapi>=0.115
 uvicorn[standard]>=0.30
 python-dotenv>=1.0
 pillow>=10.3
 
-# ML stack — install torch matching your CUDA/ROCm/CPU build FIRST (see README).
-diffusers>=0.40.0
-transformers>=4.44
-accelerate>=0.34
+huggingface_hub>=0.24
+tokenizers>=0.22,<0.23
 safetensors>=0.4
-sentencepiece>=0.2
-protobuf>=4.25
-
-# Required to load the Chroma *.gguf (Q4) transformer via GGUFQuantizationConfig.
-gguf>=0.10
+omegaconf>=2.3
+accelerate>=0.34
+diffusers>=0.40.0,<0.41

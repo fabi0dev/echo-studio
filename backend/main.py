@@ -1,6 +1,6 @@
 """Echo Studio — FastAPI application.
 
-Serves the web UI and a small JSON API around the Chroma Q4 engine.
+Serves the web UI and a small JSON API around a local SD 1.5 engine.
 Run with:  uvicorn backend.main:app --host 0.0.0.0 --port 8000
 """
 from __future__ import annotations
@@ -15,11 +15,13 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .jobs import jobs
+from .paths import is_checkpoint_ready
 from .pipeline import engine
 from .schemas import GenerateRequest, HealthResponse, JobStatus
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-FRONTEND_DIR = ROOT_DIR / "frontend"
+FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
+FRONTEND_DIR = FRONTEND_DIST if (FRONTEND_DIST / "index.html").is_file() else ROOT_DIR / "frontend"
 
 app = FastAPI(title="Echo Studio", version="0.1.0")
 app.add_middleware(
@@ -52,9 +54,10 @@ def health() -> HealthResponse:
         model_loaded=engine.loaded,
         device=engine.device if engine.loaded else settings.DEVICE,
         dtype=engine.dtype_str if engine.loaded else settings.DTYPE,
-        base_model=settings.BASE_MODEL_ID,
-        gguf=settings.CHROMA_GGUF,
-        gguf_present=engine.gguf_present(),
+        base_model=settings.MODEL_ID,
+        gguf=settings.CHECKPOINT,
+        gguf_present=engine.model_present(),
+        base_ready=is_checkpoint_ready(),
     )
 
 
@@ -72,12 +75,12 @@ def get_config() -> dict:
 
 @app.post("/api/generate", response_model=JobStatus)
 def generate(req: GenerateRequest) -> JobStatus:
-    if not engine.gguf_present():
+    if not engine.model_present():
         raise HTTPException(
             status_code=503,
             detail=(
-                "Chroma GGUF model is missing. Run "
-                "`python scripts/download_models.py` on this machine first."
+                "Checkpoint DreamShaper 8 ausente. Rode "
+                "`python scripts/download_models.py` nesta máquina."
             ),
         )
     params = {
@@ -103,19 +106,54 @@ def job_status(job_id: str) -> JobStatus:
     return _to_status(job)
 
 
-@app.get("/api/gallery")
-def gallery(limit: int = 60) -> dict:
-    files = sorted(
+def _gallery_pngs() -> list[Path]:
+    return sorted(
         settings.OUTPUT_DIR.glob("*.png"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
-    )[:limit]
+    )
+
+
+def _safe_output_png(filename: str) -> Path:
+    name = Path(filename).name
+    if name != filename or not name.lower().endswith(".png"):
+        raise HTTPException(status_code=400, detail="nome de arquivo inválido")
+    if any(part in name for part in ("/", "\\", "..")):
+        raise HTTPException(status_code=400, detail="nome de arquivo inválido")
+    root = settings.OUTPUT_DIR.resolve()
+    path = (root / name).resolve()
+    if path.parent != root:
+        raise HTTPException(status_code=400, detail="caminho inválido")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="imagem não encontrada")
+    return path
+
+
+@app.get("/api/gallery")
+def gallery(limit: int = 60) -> dict:
+    files = _gallery_pngs()[: max(1, min(limit, 200))]
     return {
         "images": [
             {"url": f"/outputs/{f.name}", "filename": f.name, **_read_png_meta(f)}
             for f in files
         ]
     }
+
+
+@app.delete("/api/gallery")
+def delete_gallery() -> dict:
+    removed = 0
+    for path in _gallery_pngs():
+        path.unlink(missing_ok=True)
+        removed += 1
+    return {"ok": True, "removed": removed}
+
+
+@app.delete("/api/gallery/{filename}")
+def delete_image(filename: str) -> dict:
+    path = _safe_output_png(filename)
+    path.unlink()
+    return {"ok": True, "filename": path.name}
 
 
 def _read_png_meta(path) -> dict:
@@ -138,6 +176,7 @@ def _read_png_meta(path) -> dict:
         "seed": int(m.group(1)) if m else None,
         "steps": None,
         "guidance": None,
+        "elapsed": None,
     }
     try:
         with Image.open(path) as im:
@@ -150,6 +189,7 @@ def _read_png_meta(path) -> dict:
             meta["seed"] = _num(t["seed"], int) or meta["seed"]
         meta["steps"] = _num(t.get("steps"), int)
         meta["guidance"] = _num(t.get("guidance"), float)
+        meta["elapsed"] = _num(t.get("elapsed"), float)
     except Exception:  # noqa: BLE001 - metadata is best-effort
         pass
     return meta

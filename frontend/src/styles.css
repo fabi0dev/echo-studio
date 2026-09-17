@@ -12,10 +12,7 @@
 
 * { box-sizing: border-box; }
 
-/* [hidden] must win over the display rules below. */
-[hidden] { display: none !important; }
-
-html, body {
+html, body, #root {
   margin: 0;
   background: var(--bg);
   color: var(--text);
@@ -24,10 +21,6 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* No ambient effects in the minimal theme. */
-.aurora { display: none; }
-
-/* Layout */
 .topbar {
   display: flex;
   align-items: center;
@@ -67,7 +60,6 @@ main {
   padding: 28px clamp(16px, 5vw, 48px) 60px;
 }
 
-/* Composer */
 .composer {
   position: relative;
   background: var(--panel);
@@ -76,7 +68,6 @@ main {
   padding: 16px;
   transition: border-color 0.15s;
 }
-.composer.dragover { border-color: #fff; }
 
 .composer-top {
   display: flex;
@@ -84,7 +75,6 @@ main {
   align-items: stretch;
 }
 
-/* Uploader */
 .uploader { flex-shrink: 0; }
 .drop-empty {
   width: 100px;
@@ -100,6 +90,8 @@ main {
   color: var(--muted);
   transition: all 0.15s;
   text-align: center;
+  background: transparent;
+  font-family: inherit;
 }
 .drop-empty:hover { border-color: #fff; color: var(--text); }
 .up-ico { font-size: 20px; line-height: 1; }
@@ -130,7 +122,7 @@ main {
 }
 .thumb-remove:hover { background: #fff; color: #000; }
 
-#prompt {
+.composer-top textarea {
   flex: 1;
   width: 100%;
   background: transparent;
@@ -144,9 +136,8 @@ main {
   padding: 6px 4px;
   min-height: 100px;
 }
-#prompt::placeholder { color: var(--faint); }
+.composer-top textarea::placeholder { color: var(--faint); }
 
-/* Strength */
 .strength-row {
   margin-top: 14px;
   padding: 12px 14px;
@@ -205,6 +196,7 @@ main {
   font-size: 16px;
 }
 .btn-ghost.small { width: auto; height: auto; padding: 6px 12px; font-size: 13px; color: var(--muted); }
+.btn-ghost.danger { color: var(--muted); }
 .btn-ghost:hover { border-color: var(--stroke-strong); }
 
 .btn-generate {
@@ -225,14 +217,13 @@ main {
 
 .spinner {
   width: 15px; height: 15px;
-  border: 2px solid rgba(0,0,0,0.3);
-  border-top-color: #000;
+  border: 2px solid rgba(255,255,255,0.25);
+  border-top-color: #fff;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Advanced */
 .advanced {
   margin-top: 14px;
   padding-top: 14px;
@@ -256,23 +247,30 @@ main {
 .field-inline { display: grid; grid-template-columns: 1fr 1fr 140px; gap: 16px; }
 input[type="range"] { width: 100%; accent-color: #fff; }
 
-/* Drop overlay */
-.drop-overlay {
-  position: absolute;
-  inset: 0;
-  border-radius: var(--radius);
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px dashed #fff;
-  display: none;
-  place-items: center;
-  font-weight: 600;
-  color: #fff;
-  pointer-events: none;
-  z-index: 3;
+.error-banner {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #4a2424;
+  border-radius: 10px;
+  background: #140808;
+  color: #f2d0d0;
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  line-height: 1.45;
 }
-.composer.dragover .drop-overlay { display: grid; }
+.error-banner button {
+  background: transparent;
+  border: 1px solid var(--stroke);
+  color: var(--text);
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 4px 10px;
+  flex-shrink: 0;
+}
 
-/* Progress */
 .progress-wrap {
   margin-top: 18px;
   border: 1px solid var(--stroke);
@@ -288,12 +286,12 @@ input[type="range"] { width: 100%; accent-color: #fff; }
   transition: width 0.3s ease;
 }
 
-/* Gallery */
 .gallery-head {
   display: flex; align-items: center; justify-content: space-between;
   margin: 40px 2px 16px;
 }
 .gallery-head h2 { font-size: 15px; margin: 0; font-weight: 600; }
+.gallery-actions { display: flex; align-items: center; gap: 8px; }
 .gallery {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
@@ -308,6 +306,7 @@ input[type="range"] { width: 100%; accent-color: #fff; }
   aspect-ratio: 1 / 1;
   cursor: pointer;
 }
+.card.pending { cursor: default; }
 .card img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 .card-prompt {
@@ -326,14 +325,18 @@ input[type="range"] { width: 100%; accent-color: #fff; }
 }
 .card:hover .card-prompt { opacity: 1; transform: translateY(0); }
 
+.card-meta {
+  position: absolute; bottom: 8px; left: 8px; right: 8px;
+  display: flex; gap: 6px; flex-wrap: wrap;
+  pointer-events: none;
+  opacity: 0.95; transition: opacity 0.2s;
+}
+.card:hover .card-meta { opacity: 0; }
 .card .seed-tag {
-  position: absolute; bottom: 8px; left: 8px;
   font-size: 11px; color: #ccc;
   background: rgba(0,0,0,0.7);
   padding: 3px 8px; border-radius: 999px;
-  opacity: 0.85; transition: opacity 0.2s;
 }
-.card:hover .seed-tag { opacity: 0; }
 
 .card-actions {
   position: absolute;
@@ -353,8 +356,8 @@ input[type="range"] { width: 100%; accent-color: #fff; }
   transition: background 0.15s, color 0.15s;
 }
 .card-btn:hover { background: #fff; color: #000; border-color: #fff; }
+.card-btn.danger:hover { background: #fff; color: #000; }
 
-/* Flash when the composer is populated from a card. */
 .composer.flash { animation: flash 0.7s ease; }
 @keyframes flash {
   0% { border-color: #fff; }
@@ -364,7 +367,6 @@ input[type="range"] { width: 100%; accent-color: #fff; }
 .empty { text-align: center; color: var(--muted); margin-top: 40px; }
 .empty b { color: var(--text); }
 
-/* Lightbox */
 .lightbox {
   position: fixed; inset: 0; z-index: 50;
   background: rgba(0,0,0,0.92);
@@ -386,6 +388,16 @@ input[type="range"] { width: 100%; accent-color: #fff; }
 }
 .lb-meta a { color: #fff; text-decoration: none; border-bottom: 1px solid var(--stroke-strong); }
 .lb-meta a:hover { border-color: #fff; }
+.lb-delete {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+  border-bottom: 1px solid var(--stroke-strong);
+}
+.lb-delete:hover { border-color: #fff; }
 
 footer {
   text-align: center;

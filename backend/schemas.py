@@ -9,10 +9,10 @@ from pydantic import BaseModel, Field
 class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=2000)
     negative_prompt: Optional[str] = Field(default=None, max_length=2000)
-    width: int = Field(default=1024, ge=256, le=4096)
-    height: int = Field(default=1024, ge=256, le=4096)
-    steps: int = Field(default=28, ge=1, le=200)
-    guidance: float = Field(default=3.0, ge=0.0, le=20.0)
+    width: int = Field(default=512, ge=256, le=4096)
+    height: int = Field(default=512, ge=256, le=4096)
+    steps: int = Field(default=20, ge=1, le=200)
+    guidance: float = Field(default=7.0, ge=0.0, le=20.0)
     seed: Optional[int] = Field(default=None, ge=0, le=2**32 - 1)
     num_images: int = Field(default=1, ge=1, le=8)
     # Optional reference image for image-to-image (base64 data URL or raw base64).
@@ -25,6 +25,7 @@ class JobImage(BaseModel):
     url: str
     seed: int
     filename: str
+    elapsed: Optional[float] = None
 
 
 class JobStatus(BaseModel):
@@ -48,3 +49,4 @@ class HealthResponse(BaseModel):
     base_model: str
     gguf: str
     gguf_present: bool
+    base_ready: bool

@@ -14,12 +14,13 @@ if [ ! -d "$VENV" ]; then
   echo "→ upgrading pip"
   pip install --upgrade pip
 
-  # Install the right torch build automatically. Advanced override via
-  # ECHO_CUDA=cu118|cu121|cu124|cpu (optional, no prompts).
-  case "${ECHO_CUDA:-}" in
+  # Install a matching torch build. Override with ECHO_TORCH (or legacy ECHO_CUDA):
+  # cu118|cu121|cu124|cpu — otherwise auto-detect CUDA, else default (CPU / Apple MPS).
+  TORCH_BACKEND="${ECHO_TORCH:-${ECHO_CUDA:-}}"
+  case "$TORCH_BACKEND" in
     cu118|cu121|cu124)
-      echo "→ installing torch ($ECHO_CUDA)"
-      pip install torch --index-url "https://download.pytorch.org/whl/$ECHO_CUDA" ;;
+      echo "→ installing torch ($TORCH_BACKEND)"
+      pip install torch --index-url "https://download.pytorch.org/whl/$TORCH_BACKEND" ;;
     cpu)
       echo "→ installing torch (CPU)"
       pip install torch --index-url https://download.pytorch.org/whl/cpu ;;
@@ -28,21 +29,22 @@ if [ ! -d "$VENV" ]; then
         echo "→ NVIDIA GPU detected: installing torch (CUDA 12.1)"
         pip install torch --index-url https://download.pytorch.org/whl/cu121
       else
-        echo "→ no NVIDIA GPU: installing default torch (CPU / Apple MPS)"
+        echo "→ installing default torch (CPU / Apple MPS)"
         pip install torch
       fi ;;
   esac
 
   echo "→ installing dependencies"
   pip install -r requirements.txt
+  pip install "transformers>=4.44,<5" --no-deps
 else
   # shellcheck disable=SC1091
   source "$VENV/bin/activate"
 fi
 
-# Fetch the Chroma Q4 model if it isn't there yet.
-if [ ! -f "models/chroma-q4.gguf" ] && [ -z "${ECHO_CHROMA_GGUF:-}" ]; then
-  echo "→ Chroma Q4 model not found — downloading…"
+# Fetch the DreamShaper 8 checkpoint if it isn't there yet.
+if [ ! -f "models/dreamshaper-8.safetensors" ] && [ -z "${ECHO_CHECKPOINT:-}" ]; then
+  echo "→ DreamShaper 8 not found — downloading…"
   python scripts/download_models.py
 fi
 

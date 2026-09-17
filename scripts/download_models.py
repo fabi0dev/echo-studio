@@ -1,17 +1,8 @@
 #!/usr/bin/env python3
-"""Download the Chroma Q4 GGUF transformer and warm the base repo cache.
+"""Download the DreamShaper 8 SD 1.5 checkpoint.
 
-Run this ONCE on the target machine before starting the server:
-
-    python scripts/download_models.py
-
-It fetches:
-  * the Q4 GGUF transformer  -> models/chroma-q4.gguf
-  * the base repo components (T5 text encoder, VAE, tokenizer, scheduler)
-    into the standard HuggingFace cache, so the first generation is fast.
-
-Override the sources with env vars (see .env.example):
-  ECHO_CHROMA_GGUF_URL, ECHO_BASE_MODEL_ID
+Uses plain HTTP with resume. Hugging Face Xet/hub transfers hang at 0 bytes
+on some Windows machines, so they are not used here.
 """
 from __future__ import annotations
 
@@ -21,52 +12,54 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent.parent
-MODELS_DIR = ROOT / "models"
-TARGET = MODELS_DIR / "chroma-q4.gguf"
+sys.path.insert(0, str(ROOT))
 
-GGUF_URL = os.getenv(
-    "ECHO_CHROMA_GGUF_URL",
-    "https://huggingface.co/silveroxides/Chroma-GGUF/resolve/main/"
-    "Chroma1-HD/Chroma1-HD-Q4_0.gguf",
-)
-BASE_MODEL_ID = os.getenv("ECHO_BASE_MODEL_ID", "lodestones/Chroma1-HD")
+from backend.paths import CHECKPOINT_PATH, CHECKPOINT_URL, MODELS_DIR  # noqa: E402
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+MODEL_URL = os.getenv("ECHO_CHECKPOINT_URL", CHECKPOINT_URL)
 
 
 def human(n: int) -> str:
+    size = float(n)
     for unit in ("B", "KB", "MB", "GB"):
-        if n < 1024:
-            return f"{n:.1f}{unit}"
-        n /= 1024
-    return f"{n:.1f}TB"
+        if size < 1024:
+            return f"{size:.1f}{unit}"
+        size /= 1024
+    return f"{size:.1f}TB"
 
 
 def download(url: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    if dest.exists() and dest.stat().st_size > 0:
-        print(f"✓ already present: {dest} ({human(dest.stat().st_size)})")
+    if dest.exists() and dest.stat().st_size > 1_000_000_000:
+        print(f"already present: {dest} ({human(dest.stat().st_size)})")
         return
 
-    # Prefer huggingface_hub when available (resumable, uses HF_TOKEN, Xet).
-    try:
-        from huggingface_hub import hf_hub_download  # type: ignore
+    tmp = dest.parent / f"{dest.name}.part"
+    downloaded = tmp.stat().st_size if tmp.exists() else 0
+    headers = {"User-Agent": "echo-studio/0.2"}
+    if downloaded > 0:
+        headers["Range"] = f"bytes={downloaded}-"
+        print(f"resuming {dest.name} from {human(downloaded)}")
+    else:
+        print(f"downloading {dest.name}")
 
-        if "huggingface.co/" in url and "/resolve/" in url:
-            repo_part, file_part = url.split("huggingface.co/")[1].split("/resolve/")
-            repo_id = repo_part
-            filename = file_part.split("/", 1)[1]  # strip the "main/" ref
-            print(f"↓ hf_hub_download {repo_id} :: {filename}")
-            cached = hf_hub_download(repo_id=repo_id, filename=filename)
-            _link_or_copy(cached, dest)
-            return
-    except Exception as exc:  # noqa: BLE001 - fall back to plain HTTP
-        print(f"  (huggingface_hub unavailable/failed: {exc}; using plain download)")
-
-    print(f"↓ downloading {url}")
-    req = Request(url, headers={"User-Agent": "echo-studio/0.1"})
-    tmp = dest.with_suffix(dest.suffix + ".part")
-    with urlopen(req) as resp, open(tmp, "wb") as fh:  # noqa: S310 - trusted HF host
-        total = int(resp.headers.get("Content-Length", 0))
-        read = 0
+    req = Request(url, headers=headers)
+    with urlopen(req) as resp, open(tmp, "ab" if downloaded else "wb") as fh:  # noqa: S310
+        if resp.status == 200 and downloaded > 0:
+            fh.seek(0)
+            fh.truncate()
+            downloaded = 0
+        total_header = int(resp.headers.get("Content-Length", 0) or 0)
+        total = downloaded + total_header if resp.status == 206 else (total_header or downloaded)
+        read = downloaded
+        last_pct = -1
         while True:
             chunk = resp.read(1 << 20)
             if not chunk:
@@ -74,55 +67,18 @@ def download(url: str, dest: Path) -> None:
             fh.write(chunk)
             read += len(chunk)
             if total:
-                pct = read / total * 100
-                sys.stdout.write(f"\r  {human(read)} / {human(total)} ({pct:4.1f}%)")
-                sys.stdout.flush()
+                pct = int(read / total * 100)
+                if pct != last_pct:
+                    last_pct = pct
+                    sys.stdout.write(f"\r  {human(read)} / {human(total)} ({pct:3d}%)")
+                    sys.stdout.flush()
     print()
-    tmp.rename(dest)
-    print(f"✓ saved -> {dest} ({human(dest.stat().st_size)})")
-
-
-def _link_or_copy(src: str, dest: Path) -> None:
-    """Expose the cached file at `dest` cross-platform.
-
-    Tries a hardlink first (instant, no extra disk), then falls back to a plain
-    copy. Symlinks are avoided because they need admin/developer mode on Windows.
-    """
-    import shutil
-
-    try:
-        if dest.exists():
-            dest.unlink()
-        os.link(src, dest)  # hardlink; works on the same NTFS/APFS/ext volume
-        print(f"✓ linked -> {dest}")
-    except OSError:
-        print(f"  (hardlink not possible; copying ~5 GB, please wait…)")
-        shutil.copyfile(src, dest)
-        print(f"✓ copied -> {dest}")
-
-
-def warm_base_repo() -> None:
-    try:
-        from huggingface_hub import snapshot_download  # type: ignore
-    except Exception:
-        print("• huggingface_hub not installed; base repo will download on first run.")
-        return
-    print(f"↓ warming base repo cache: {BASE_MODEL_ID}")
-    try:
-        snapshot_download(
-            repo_id=BASE_MODEL_ID,
-            allow_patterns=[
-                "*.json", "*.txt", "*.model",
-                "text_encoder/*", "tokenizer/*", "vae/*", "scheduler/*",
-            ],
-        )
-        print("✓ base repo cached (text encoder / vae / tokenizer / scheduler)")
-    except Exception as exc:  # noqa: BLE001
-        print(f"  (skipped base warm: {exc})")
+    os.replace(tmp, dest)
+    print(f"saved -> {dest} ({human(dest.stat().st_size)})")
 
 
 if __name__ == "__main__":
-    print("Echo Studio — model downloader\n" + "-" * 34)
-    download(GGUF_URL, TARGET)
-    warm_base_repo()
-    print("\nDone. Start the server with:  ./run.sh   (or see README)")
+    print("Echo Studio - model downloader\n" + "-" * 34)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    download(MODEL_URL, CHECKPOINT_PATH)
+    print("\nDone. Start with run.bat (Windows) or ./run.sh")

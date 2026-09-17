@@ -1,19 +1,61 @@
 param(
-    # Which PyTorch build to install: cu118 | cu121 | cu124 | cpu | auto.
-    # Omit to be asked interactively (or set $env:ECHO_CUDA).
+    # Which PyTorch backend to install:
+    # auto | cu118 | cu121 | cu124 | directml | cpu
+    # Omit for auto-detect. $env:ECHO_TORCH (or legacy $env:ECHO_CUDA) also work.
+    [string]$Torch = "",
     [string]$Cuda = ""
 )
 
 # Echo Studio — Windows setup.
-# Creates a virtualenv, installs the chosen PyTorch build, installs
-# dependencies, and downloads the model.
-# Run via setup.bat, or:  powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -Cuda cu121
+# Creates a virtualenv, installs a PyTorch build that matches the GPU
+# (CUDA, DirectML, or CPU), installs dependencies, and downloads the model.
 
 $ErrorActionPreference = "Stop"
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+$env:HF_HUB_DISABLE_XET = "1"
+$env:HF_HUB_DISABLE_SYMLINKS_WARNING = "1"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
 Write-Host "=== Echo Studio setup (Windows) ===" -ForegroundColor Cyan
+
+function Test-NvidiaSmi {
+    if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) { return $true }
+    $paths = @(
+        "$env:SystemRoot\System32\nvidia-smi.exe",
+        "C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe"
+    )
+    foreach ($p in $paths) {
+        if (Test-Path $p) { return $true }
+    }
+    return $false
+}
+
+function Test-DirectXGpu {
+    $gpus = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue
+    foreach ($gpu in @($gpus)) {
+        $name = [string]$gpu.Name
+        if ($name -and $name -notmatch "Microsoft Basic Display") {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Resolve-TorchBackend([string]$choice) {
+    if ($choice) { return $choice.ToLowerInvariant() }
+    if (Test-NvidiaSmi) { return "cu121" }
+    if (Test-DirectXGpu) { return "directml" }
+    return "cpu"
+}
+
+function Invoke-Pip {
+    & $script:venvPy -m pip @args
+    if ($LASTEXITCODE -ne 0) {
+        throw "pip failed: pip $($args -join ' ')"
+    }
+}
 
 # --- Find Python -----------------------------------------------------------
 if (Get-Command py -ErrorAction SilentlyContinue) {
@@ -27,61 +69,67 @@ if (Get-Command py -ErrorAction SilentlyContinue) {
 }
 
 # --- Create venv -----------------------------------------------------------
-$venvPy = Join-Path $root ".venv\Scripts\python.exe"
-if (-not (Test-Path $venvPy)) {
+$script:venvPy = Join-Path $root ".venv\Scripts\python.exe"
+if (-not (Test-Path $script:venvPy)) {
     Write-Host "-> criando ambiente virtual (.venv)" -ForegroundColor Yellow
     & $pyExe @pyArgs -m venv .venv
 }
 
 Write-Host "-> atualizando pip" -ForegroundColor Yellow
-& $venvPy -m pip install --upgrade pip
+Invoke-Pip install --upgrade pip
 
-# --- Decide which PyTorch build to install ---------------------------------
-function Get-TorchIndex([string]$choice) {
-    switch ($choice.ToLower()) {
-        "cu118" { "https://download.pytorch.org/whl/cu118" }
-        "cu121" { "https://download.pytorch.org/whl/cu121" }
-        "cu124" { "https://download.pytorch.org/whl/cu124" }
-        "cpu"   { "https://download.pytorch.org/whl/cpu" }
-        default { $null }
-    }
-}
-
-# Simple by default: auto-detect. Advanced override via -Cuda or $env:ECHO_CUDA
-# (cu118 | cu121 | cu124 | cpu). No prompts.
-$choice = $Cuda
-if (-not $choice) { $choice = $env:ECHO_CUDA }
-if ($choice -and $choice.ToLower() -eq "auto") { $choice = "" }
-
-if (-not $choice) {
-    if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
-        $choice = "cu121"  # sensible default for NVIDIA GPUs
-    } else {
-        Write-Host "-> Nenhuma GPU NVIDIA detectada." -ForegroundColor Yellow
-        $choice = "cpu"
-    }
-}
-
-$index = Get-TorchIndex $choice
-if (-not $index) {
-    Write-Host "Valor de CUDA invalido: '$choice' (use cu118|cu121|cu124|cpu)." -ForegroundColor Red
-    exit 1
-}
-
-if ($choice -eq "cpu") {
-    Write-Host "-> instalando PyTorch (CPU) — a geracao sera LENTA sem GPU" -ForegroundColor Yellow
-} else {
-    Write-Host "-> instalando PyTorch ($choice)" -ForegroundColor Green
-}
-& $venvPy -m pip install torch --index-url $index
-
-# --- Install the rest ------------------------------------------------------
 Write-Host "-> instalando dependencias" -ForegroundColor Yellow
-& $venvPy -m pip install -r requirements.txt
+Invoke-Pip install -r requirements.txt
+# transformers 4.x vs huggingface_hub 1.x: install without resolver.
+Invoke-Pip install "transformers>=4.44,<5" --no-deps
+# hf-xet hangs at 0 bytes on some Windows machines; HTTP fallback is reliable.
+& $script:venvPy -m pip uninstall -y hf-xet 2>$null
+
+# Torch last so the matching backend is not overwritten by a default wheel.
+$choice = $Torch
+if (-not $choice) { $choice = $Cuda }
+if (-not $choice) { $choice = $env:ECHO_TORCH }
+if (-not $choice) { $choice = $env:ECHO_CUDA }
+if ($choice -and $choice.ToLowerInvariant() -eq "auto") { $choice = "" }
+
+$backend = Resolve-TorchBackend $choice
+
+switch ($backend) {
+    "cu118" { $index = "https://download.pytorch.org/whl/cu118" }
+    "cu121" { $index = "https://download.pytorch.org/whl/cu121" }
+    "cu124" { $index = "https://download.pytorch.org/whl/cu124" }
+    "cpu" { $index = "https://download.pytorch.org/whl/cpu" }
+    "directml" { $index = $null }
+    default {
+        Write-Host "Backend invalido: '$backend' (use auto|cu118|cu121|cu124|directml|cpu)." -ForegroundColor Red
+        exit 1
+    }
+}
+
+if ($backend -eq "directml") {
+    Write-Host "-> GPU DirectX detectada: instalando PyTorch + DirectML (AMD/Intel/NVIDIA)" -ForegroundColor Green
+    try {
+        Invoke-Pip install torch-directml
+    } catch {
+        Write-Host "-> DirectML indisponivel neste Python; caindo para CPU." -ForegroundColor Yellow
+        $backend = "cpu"
+        $index = "https://download.pytorch.org/whl/cpu"
+        Invoke-Pip install torch --index-url $index
+    }
+} elseif ($backend -eq "cpu") {
+    Write-Host "-> nenhuma GPU utilizavel detectada: instalando PyTorch (CPU)" -ForegroundColor Yellow
+    Invoke-Pip install torch --index-url $index
+} else {
+    Write-Host "-> instalando PyTorch ($backend)" -ForegroundColor Green
+    Invoke-Pip install torch --index-url $index
+}
 
 # --- Download the model ----------------------------------------------------
-Write-Host "-> baixando o modelo Chroma Q4 (~5 GB, so na primeira vez)" -ForegroundColor Yellow
-& $venvPy scripts\download_models.py
+Write-Host "-> baixando DreamShaper 8 (~2 GB, so na primeira vez)" -ForegroundColor Yellow
+& $script:venvPy -u scripts\download_models.py
+if ($LASTEXITCODE -ne 0) {
+    throw "download_models.py failed"
+}
 
 Write-Host ""
 Write-Host "Setup concluido! Rode run.bat para iniciar." -ForegroundColor Cyan

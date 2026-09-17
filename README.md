@@ -1,38 +1,37 @@
 # ✦ Echo Studio
 
-A local, self-hosted image generator inspired by **Grok Imagine**, running the
-open **Chroma** diffusion model in its **Q4 (GGUF) quantized** form. Type a
-prompt, pick an aspect ratio, hit **Imaginar**, and everything is generated on
+A local, self-hosted image generator inspired by **Grok Imagine**, running
+**DreamShaper 8** (Stable Diffusion 1.5) without a safety checker. Type a
+prompt, pick an aspect ratio, hit **Gerar**, and everything is generated on
 *your* machine — no API keys, nothing leaves the box.
 
-> Built with a FastAPI backend (diffusers + Chroma Q4 GGUF) and a zero-build
-> vanilla-JS frontend. Layout: prompt bar on top, live progress, gallery grid below.
+> Built with a FastAPI backend (diffusers + SD 1.5) and a Vite + React
+> TypeScript frontend. Layout: prompt bar on top, live progress, gallery grid below.
 
 ---
 
 ## ⚠️ Read this first
 
-This repo is **ready to run but was intentionally NOT run / not downloaded on the
-machine it was authored on.** Chroma is an ~8.9B-parameter model; even at Q4 it
-needs a real GPU. Do the setup below on the target machine.
+This repo is **ready to run**. DreamShaper 8 is an SD 1.5 checkpoint (~2 GB)
+that fits 4–8 GB GPUs, including AMD via DirectML.
 
 **Recommended target hardware**
 
 | Setup | VRAM | Notes |
 |-------|------|-------|
-| **Windows + NVIDIA GPU** | **8–12 GB+** | Recommended. `run.bat` auto-installs the CUDA build. |
-| Linux + NVIDIA GPU | 8–12 GB+ | Same, via `run.sh`. Q4 + `enable_model_cpu_offload` fits ~8 GB. |
-| Apple Silicon (M-series) | 16 GB+ unified | Works via `mps`, slower; GGUF dequant on MPS can be finicky. |
-| CPU only (any OS) | — | Technically runs, but a single image can take *many minutes*. |
+| **Windows + any DirectX 12 GPU** | **4 GB+** | AMD, Intel or NVIDIA. Setup installs DirectML (or CUDA if NVIDIA is present). |
+| Linux + NVIDIA GPU | 4 GB+ | CUDA via `run.sh`. |
+| Apple Silicon (M-series) | 8 GB+ unified | Works via `mps`. |
+| CPU only (any OS) | — | Works, slower (tens of seconds per image). |
 
-You also need ~15–20 GB free disk (Q4 transformer ≈ 5 GB, T5 text encoder + VAE ≈ 10 GB).
+You need ~3 GB free disk for the checkpoint.
 
 ---
 
 ## 🚀 Quick start
 
 You need **Python 3.10+** installed first. Everything else (virtualenv, the
-right PyTorch build, dependencies and the ~5 GB model) is installed automatically.
+right PyTorch build, dependencies and the ~2 GB model) is installed automatically.
 
 ### 🪟 Windows
 
@@ -40,8 +39,8 @@ right PyTorch build, dependencies and the ~5 GB model) is installed automaticall
    python.exe to PATH"** during install.
 2. **Double-click `run.bat`.**
 
-That's it. On the first run it detects your GPU, installs the correct PyTorch
-(CUDA if you have an NVIDIA GPU, otherwise CPU), installs everything, downloads
+That's it. On the first run it detects your GPU, installs the matching PyTorch
+(CUDA, DirectML for AMD/Intel, or CPU), installs everything, downloads
 the model, then starts the app and opens your browser at
 **http://localhost:8000**. Later runs just start the app.
 
@@ -51,18 +50,17 @@ the model, then starts the app and opens your browser at
 > If Windows SmartScreen blocks the script, click *More info → Run anyway*, or
 > run in PowerShell: `powershell -ExecutionPolicy Bypass -File scripts\setup.ps1`.
 >
-> **Advanced (optional):** to force a specific CUDA build instead of the default
-> (CUDA 12.1), run `setup.bat cu118` (or `cu124` / `cpu`). No need for the normal
-> case — it's picked automatically.
+> **Advanced (optional):** to force a backend, run `setup.bat directml`
+> (or `cu121` / `cu118` / `cu124` / `cpu`). The default is auto-detect.
 
 ### 🍎 macOS / 🐧 Linux
 
 ```bash
 ./run.sh
 ```
-Creates `.venv`, installs the right torch build (CUDA if an NVIDIA GPU is
-present, else CPU/Apple-MPS), installs deps, downloads the model, and serves at
-**http://localhost:8000**. To force a CUDA build: `ECHO_CUDA=cu118 ./run.sh`.
+Creates `.venv`, installs a matching torch build (CUDA if available, else
+CPU/Apple-MPS), installs deps, downloads the model, and serves at
+**http://localhost:8000**. To force a build: `ECHO_TORCH=cpu ./run.sh`.
 
 <details>
 <summary>Prefer manual steps? (any OS)</summary>
@@ -72,9 +70,11 @@ python -m venv .venv
 # Windows:  .venv\Scripts\activate
 # mac/linux: source .venv/bin/activate
 pip install --upgrade pip
-pip install torch --index-url https://download.pytorch.org/whl/cu121   # NVIDIA; or plain "pip install torch" for CPU/Mac
+# Windows AMD/Intel: pip install torch-directml
+# NVIDIA:            pip install torch --index-url https://download.pytorch.org/whl/cu121
+# CPU / Apple:       pip install torch
 pip install -r requirements.txt
-python scripts/download_models.py            # downloads Chroma Q4 + warms base repo
+python scripts/download_models.py            # downloads DreamShaper 8
 uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 </details>
@@ -94,43 +94,40 @@ Copy `.env.example` → `.env` and tweak. Highlights:
 
 | Var | Default | Meaning |
 |-----|---------|---------|
-| `ECHO_BASE_MODEL_ID` | `lodestones/Chroma1-HD` | Repo providing T5 encoder, VAE, tokenizer, scheduler. |
-| `ECHO_CHROMA_GGUF` | `models/chroma-q4.gguf` | Local path to the Q4 transformer. |
-| `ECHO_CHROMA_GGUF_URL` | silveroxides Q4_0 | Where the downloader pulls the GGUF from. |
-| `ECHO_DEVICE` | `auto` | `auto` → cuda → mps → cpu. Force with `cuda`/`mps`/`cpu`. |
-| `ECHO_DTYPE` | `auto` | `bfloat16` on GPU, `float32` on CPU. |
+| `ECHO_CHECKPOINT` | `models/dreamshaper-8.safetensors` | Local SD 1.5 checkpoint. |
+| `ECHO_CHECKPOINT_URL` | Lykon DreamShaper 8 pruned | Where the downloader pulls the weights from. |
+| `ECHO_DEVICE` | `auto` | `auto` → cuda → mps → DirectML → cpu. Force with `cuda`/`mps`/`directml`/`cpu`. |
+| `ECHO_DTYPE` | `auto` | `float32` on CPU/DirectML, `bfloat16` on CUDA/MPS. |
 | `ECHO_CPU_OFFLOAD` | `true` | Offload modules to CPU between steps (CUDA, saves VRAM). |
 | `ECHO_PRELOAD` | `false` | Load the model at boot instead of on first request. |
 
-**Swapping the Chroma version/quant:** point `ECHO_CHROMA_GGUF_URL` at any file in
-[silveroxides/Chroma-GGUF](https://huggingface.co/silveroxides/Chroma-GGUF)
-(e.g. a `chroma-unlocked-vNN-Q4_0.gguf`), delete `models/chroma-q4.gguf`, re-run
-the downloader. Larger quants (Q5/Q8) = better quality, more VRAM.
+**Swapping the checkpoint:** point `ECHO_CHECKPOINT_URL` at any SD 1.5
+`.safetensors` (Civitai/Hugging Face), delete `models/dreamshaper-8.safetensors`,
+re-run the downloader. The CLIP safety checker is never loaded.
 
 ---
 
 ## 🧩 How it works
 
 ```
-frontend/  (vanilla JS)  ──HTTP──►  FastAPI (backend/main.py)
+frontend/  (Vite + React + TS)  ──HTTP──►  FastAPI (backend/main.py)
                                         │
                                         ├─ jobs.py    background worker + progress
-                                        └─ pipeline.py ChromaEngine
+                                        └─ pipeline.py ImageEngine
                                                         │
-              ChromaTransformer2DModel.from_single_file( chroma-q4.gguf,
-                    GGUFQuantizationConfig )   ← the Q4 quantized transformer
-                                                        │
-              ChromaPipeline.from_pretrained( Chroma1-HD, transformer=… )
-                    └ T5-XXL text encoder + VAE + scheduler
+              StableDiffusionPipeline.from_single_file( dreamshaper-8.safetensors )
+                    └ CLIP text encoder + UNet + VAE  (safety checker off)
 ```
 
-The Q4 weights stay in low-memory `uint8` and are dequantized on the fly during
-each forward pass, which is what keeps VRAM low.
+Dev UI: `cd frontend && npm run dev` (proxy `/api` → porta 8000).
+Produção: FastAPI serve `frontend/dist`.
+
+SD 1.5 at 512×512 fits AMD 8 GB cards via DirectML.
 
 ### API
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/api/health` | model/device status, whether the GGUF is present |
+| `GET` | `/api/health` | model/device status, whether the checkpoint is present |
 | `GET` | `/api/config` | default steps/guidance/limits for the UI |
 | `POST` | `/api/generate` | `{prompt, negative_prompt, width, height, steps, guidance, seed, num_images}` → job |
 | `GET` | `/api/jobs/{id}` | live progress (`queued`→`loading_model`→`running`→`done`) |
@@ -157,11 +154,11 @@ Generation is serialized by a lock (one GPU = one job at a time); requests queue
   interfere — an actual python.org install is most reliable.)
 - **Windows: script is blocked** → run `powershell -ExecutionPolicy Bypass -File
   scripts\setup.ps1`, or SmartScreen → *More info → Run anyway*.
-- **"Chroma GGUF model is missing"** → run `python scripts/download_models.py`
+- **"Checkpoint not found" / modelo ausente** → run `python scripts/download_models.py`
   (or on Windows, `.venv\Scripts\python scripts\download_models.py`).
-- **CUDA out of memory** → keep `ECHO_CPU_OFFLOAD=true`, lower resolution
-  (try 832×1216), reduce batch, or use a smaller side via `ECHO_MAX_SIDE`.
-- **`GGUFQuantizationConfig` import error** → `pip install -U diffusers gguf`
+- **CUDA / DirectML out of memory** → keep `ECHO_CPU_OFFLOAD=true`, lower resolution
+  (try 512×512), reduce batch, or use a smaller side via `ECHO_MAX_SIDE`.
+- **`from_single_file` import error** → `pip install -U diffusers omegaconf`
   (needs diffusers ≥ 0.40).
 - **MPS errors on Mac** → set `ECHO_DTYPE=float32` (slower but robust), or
   `ECHO_DEVICE=cpu` as a fallback.
@@ -171,10 +168,9 @@ Generation is serialized by a lock (one GPU = one job at a time); requests queue
 ---
 
 ## 📝 Notes & credits
-- Grok Imagine also does *video*; Chroma is a **text-to-image** model, so Echo
-  Studio focuses on images (with img2img/inpainting pipelines available in
-  diffusers if you want to extend it).
-- Chroma by **lodestones**; Q4 GGUF conversions by **silveroxides**; inference via
-  Hugging Face **diffusers**. Respect each model's license before publishing outputs.
+- Grok Imagine also does *video*; Echo Studio is **text-to-image** (with img2img
+  available). There is no CLIP safety checker.
+- DreamShaper 8 by **Lykon**; inference via Hugging Face **diffusers**. Respect
+  the model's license before publishing outputs.
 
 Generated with [Claude Code](https://claude.com/claude-code).

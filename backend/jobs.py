@@ -38,8 +38,7 @@ class JobManager:
         self._jobs: Dict[str, Job] = {}
         self._queue: "Queue[str]" = Queue()
         self._lock = threading.Lock()
-        self._worker = threading.Thread(target=self._run, daemon=True)
-        self._worker.start()
+        self._worker: Optional[threading.Thread] = None
 
     # -------------------------------------------------------------- public
     def submit(self, prompt: str, params: dict) -> Job:
@@ -47,6 +46,9 @@ class JobManager:
                   total_steps=params["steps"] * params["num_images"])
         with self._lock:
             self._jobs[job.id] = job
+            if self._worker is None or not self._worker.is_alive():
+                self._worker = threading.Thread(target=self._run, daemon=True)
+                self._worker.start()
         self._queue.put(job.id)
         return job
 
@@ -64,8 +66,11 @@ class JobManager:
             try:
                 self._process(job)
             except Exception as exc:  # noqa: BLE001 - surfaced to client
+                import traceback
+
                 job.state = "error"
-                job.error = str(exc)
+                job.error = f"{exc}\n{traceback.format_exc()}"
+                print(f"[echo] job {job.id} failed:\n{job.error}")
                 job.finished_at = time.time()
             finally:
                 self._queue.task_done()
@@ -99,14 +104,15 @@ class JobManager:
         )
 
         ts = time.strftime("%Y%m%d-%H%M%S")
-        for idx, (image, seed) in enumerate(results):
+        for idx, (image, seed, elapsed_s) in enumerate(results):
             fname = f"{ts}_{job.id}_{idx}_{seed}.png"
             path = settings.OUTPUT_DIR / fname
-            self._save_with_metadata(image, path, job, seed)
+            self._save_with_metadata(image, path, job, seed, elapsed_s)
             job.images.append({
                 "url": f"/outputs/{fname}",
                 "seed": seed,
                 "filename": fname,
+                "elapsed": round(float(elapsed_s), 2),
             })
 
         job.progress = 1.0
@@ -124,10 +130,16 @@ class JobManager:
         if "," in data and data.strip().startswith("data:"):
             data = data.split(",", 1)[1]
         raw = base64.b64decode(data)
-        return Image.open(io.BytesIO(raw))
+        return Image.open(io.BytesIO(raw)).convert("RGB")
 
     @staticmethod
-    def _save_with_metadata(image: "Image.Image", path, job: Job, seed: int) -> None:
+    def _save_with_metadata(
+        image: "Image.Image",
+        path,
+        job: Job,
+        seed: int,
+        elapsed_s: float,
+    ) -> None:
         from PIL import PngImagePlugin
 
         meta = PngImagePlugin.PngInfo()
@@ -136,7 +148,8 @@ class JobManager:
         meta.add_text("seed", str(seed))
         meta.add_text("steps", str(job.params["steps"]))
         meta.add_text("guidance", str(job.params["guidance"]))
-        meta.add_text("model", "Chroma Q4 (GGUF) via Echo Studio")
+        meta.add_text("elapsed", f"{float(elapsed_s):.2f}")
+        meta.add_text("model", f"{settings.MODEL_ID} via Echo Studio")
         image.save(path, format="PNG", pnginfo=meta)
 
 
