@@ -1,6 +1,20 @@
-node_modules/
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Env
 .env
+
+# Models & outputs (large / generated)
+models/*.gguf
+models/*.safetensors
+outputs/*.png
+outputs/*.jpg
+!models/.gitkeep
+!outputs/.gitkeep
+
+# OS
 .DS_Store
-dist/
-build/
-.cache/

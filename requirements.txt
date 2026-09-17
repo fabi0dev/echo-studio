@@ -1,0 +1,18 @@
+# Echo Studio — Chroma Q4 (GGUF) local image generation
+# Pinned loosely; tested against diffusers 0.40+ which ships the Chroma pipelines.
+
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-dotenv>=1.0
+pillow>=10.3
+
+# ML stack — install torch matching your CUDA/ROCm/CPU build FIRST (see README).
+diffusers>=0.40.0
+transformers>=4.44
+accelerate>=0.34
+safetensors>=0.4
+sentencepiece>=0.2
+protobuf>=4.25
+
+# Required to load the Chroma *.gguf (Q4) transformer via GGUFQuantizationConfig.
+gguf>=0.10

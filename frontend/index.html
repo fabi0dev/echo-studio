@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Echo Studio · Chroma Q4</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>" />
+</head>
+<body>
+  <div class="aurora"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">✦</span>
+      <div>
+        <h1>Echo Studio</h1>
+        <p class="tagline">imagine · local · <b>Chroma Q4</b></p>
+      </div>
+    </div>
+    <div class="status" id="status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">verificando…</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Composer -->
+    <section class="composer">
+      <textarea id="prompt" rows="2" placeholder="Descreva o que você quer imaginar…  (ex.: uma raposa de neon numa floresta chuvosa à noite, cinematográfico)"></textarea>
+
+      <div class="composer-row">
+        <div class="ratios" id="ratios">
+          <button class="chip active" data-w="1024" data-h="1024">1:1</button>
+          <button class="chip" data-w="1152" data-h="896">4:3</button>
+          <button class="chip" data-w="1216" data-h="832">3:2</button>
+          <button class="chip" data-w="1344" data-h="768">16:9</button>
+          <button class="chip" data-w="832" data-h="1216">2:3</button>
+          <button class="chip" data-w="768" data-h="1344">9:16</button>
+        </div>
+
+        <div class="grow"></div>
+
+        <div class="count">
+          <label>imagens</label>
+          <div class="seg" id="countSeg">
+            <button class="active" data-n="1">1</button>
+            <button data-n="2">2</button>
+            <button data-n="4">4</button>
+          </div>
+        </div>
+
+        <button class="btn-ghost" id="advBtn" title="Ajustes avançados">⚙</button>
+        <button class="btn-generate" id="generate">
+          <span class="gen-label">Imaginar</span>
+          <span class="spinner" hidden></span>
+        </button>
+      </div>
+
+      <!-- Advanced -->
+      <div class="advanced" id="advanced" hidden>
+        <div class="field">
+          <label>Prompt negativo</label>
+          <input id="negative" type="text" placeholder="(usa o padrão se vazio)" />
+        </div>
+        <div class="field-inline">
+          <div class="field">
+            <label>Passos <b id="stepsVal">28</b></label>
+            <input id="steps" type="range" min="8" max="60" value="28" />
+          </div>
+          <div class="field">
+            <label>Guidance <b id="guidanceVal">3.0</b></label>
+            <input id="guidance" type="range" min="0" max="10" step="0.5" value="3" />
+          </div>
+          <div class="field seed-field">
+            <label>Seed</label>
+            <input id="seed" type="number" min="0" placeholder="aleatória" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Progress -->
+    <section class="progress-wrap" id="progressWrap" hidden>
+      <div class="progress-head">
+        <span id="progressLabel">Preparando…</span>
+        <span id="progressPct">0%</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    </section>
+
+    <!-- Gallery -->
+    <section class="gallery-head">
+      <h2>Suas criações</h2>
+      <button class="btn-ghost small" id="refresh">↻ atualizar</button>
+    </section>
+    <section class="gallery" id="gallery"></section>
+    <p class="empty" id="empty" hidden>Nada por aqui ainda. Escreva um prompt e clique em <b>Imaginar</b>.</p>
+  </main>
+
+  <!-- Lightbox -->
+  <div class="lightbox" id="lightbox" hidden>
+    <button class="lb-close" id="lbClose">✕</button>
+    <img id="lbImg" alt="" />
+    <div class="lb-meta" id="lbMeta"></div>
+  </div>
+
+  <footer>
+    <span>Modelo local <b>Chroma Q4 (GGUF)</b> via diffusers · nada sai desta máquina.</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
