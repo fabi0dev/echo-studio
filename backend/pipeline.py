@@ -11,7 +11,13 @@ from pathlib import Path
 from typing import Any, Callable, List, Optional
 
 from .config import settings
-from .device import device_kind, resolve_dtype, resolve_torch_device
+from .device import (
+    describe_device,
+    device_kind,
+    resolve_dtype,
+    resolve_offload_device,
+    resolve_torch_device,
+)
 from .paths import is_checkpoint_ready
 
 
@@ -127,6 +133,107 @@ def _patch_sdpa_for_older_torch() -> None:
     _SDPA_PATCHED = True
 
 
+def _exc_text(exc: BaseException) -> str:
+    try:
+        return str(exc)
+    except Exception:
+        return type(exc).__name__
+
+
+def _to_device(value: Any, device: Any) -> Any:
+    import torch
+
+    if value is None:
+        return None
+    if not torch.is_tensor(value):
+        return value
+    if str(value.device) == str(device):
+        return value
+    # DirectML adapters cannot share tensors; hop through CPU.
+    if device_kind(value.device) == "directml" and device_kind(device) == "directml":
+        return value.cpu().to(device)
+    return value.to(device)
+
+
+def _has_params(module: Any) -> bool:
+    getter = getattr(module, "parameters", None)
+    if not callable(getter):
+        return False
+    try:
+        next(getter())
+        return True
+    except (StopIteration, TypeError):
+        return False
+
+
+def _place_compute_modules(pipe: Any, device: Any) -> None:
+    """Move UNet/CLIP onto the compute GPU. Leave the VAE where it is (CPU)."""
+    components = getattr(pipe, "components", {}) or {}
+    for name, module in components.items():
+        if name == "vae" or module is None or not _has_params(module):
+            continue
+        module.to(device)
+
+
+def _place_vae(pipe: Any, compute_device: Any) -> str:
+    """Keep VAE on CPU under DirectML so the dGPU has room for UNet activations.
+
+    Do not call ``vae.to()`` onto a second DirectML adapter: torch-directml
+    deadlocks (and sometimes raises a garbled UnicodeDecodeError) when two
+    GPUs share the process. ``vae.to(cpu)`` after a failed GPU move also
+    deadlocks — leave weights on CPU and wrap decode/encode instead.
+    """
+    import torch
+
+    vae = pipe.vae
+    if device_kind(_module_device(vae)) != "cpu":
+        vae.to("cpu")
+    resolve_offload_device(compute_device)
+    label = "cpu"
+
+    try:
+        vae.enable_slicing()
+    except Exception:
+        pass
+    try:
+        vae.enable_tiling()
+    except Exception:
+        pass
+
+    vae_device = torch.device("cpu")
+    original_decode = vae.decode
+    original_encode = getattr(vae, "encode", None)
+
+    def decode(latents, *args, **kwargs):
+        out = original_decode(_to_device(latents, vae_device), *args, **kwargs)
+        sample = out.sample if hasattr(out, "sample") else out[0] if isinstance(out, (tuple, list)) else out
+        sample = _to_device(sample, "cpu")
+        if hasattr(out, "sample"):
+            out.sample = sample
+            return out
+        if isinstance(out, tuple):
+            return (sample,) + out[1:]
+        if isinstance(out, list):
+            return [sample, *out[1:]]
+        return sample
+
+    vae.decode = decode
+    if callable(original_encode):
+        def encode(sample, *args, **kwargs):
+            out = original_encode(_to_device(sample, vae_device), *args, **kwargs)
+            dist = getattr(out, "latent_dist", None)
+            if dist is not None:
+                for attr in ("mean", "logvar", "std"):
+                    tensor = getattr(dist, attr, None)
+                    if tensor is not None and hasattr(tensor, "device"):
+                        setattr(dist, attr, _to_device(tensor, compute_device))
+            return out
+
+        vae.encode = encode
+    print(f"[echo] VAE on {label} (UNet on {describe_device(compute_device)})")
+    return label
+
+
 def _module_device(module: Any) -> Any:
     return next(module.parameters()).device
 
@@ -148,6 +255,7 @@ class ImageEngine:
         self._lock = threading.Lock()
         self._load_lock = threading.Lock()
         self.device: str = "?"
+        self.adapter: str = ""
         self.dtype_str: str = "?"
         self._loaded = False
 
@@ -186,22 +294,31 @@ class ImageEngine:
             dtype = resolve_dtype(settings.DTYPE, requested)
             pipe = self._build_pipe(ckpt, dtype)
             try:
-                self._place_pipe(pipe, requested, dtype)
+                vae_label = self._place_pipe(pipe, requested, dtype)
                 device = _module_device(pipe.unet)
             except Exception as exc:
                 kind = device_kind(requested)
-                if kind == "cpu":
-                    raise
-                print(f"[echo] {kind} failed ({exc}); falling back to CPU")
+                if kind in {"cpu", "directml"}:
+                    # DirectML already owns modules after a partial .to(); a
+                    # second pipe.to(cpu) raises "resource deadlock would occur".
+                    raise RuntimeError(
+                        f"{kind} placement failed: {_exc_text(exc)}"
+                    ) from exc
+                print(f"[echo] {kind} failed ({_exc_text(exc)}); falling back to CPU")
                 device = torch.device("cpu")
                 dtype = torch.float32
-                self._place_pipe(pipe, device, dtype)
+                vae_label = self._place_pipe(pipe, device, dtype)
 
             self._pipe = pipe
             self.device = device_kind(device)
+            self.adapter = describe_device(device)
+            if vae_label and vae_label not in {self.adapter, "cpu"}:
+                self.adapter = f"{self.adapter} · VAE {vae_label}"
+            elif vae_label == "cpu" and self.device == "directml":
+                self.adapter = f"{self.adapter} · VAE cpu"
             self.dtype_str = str(dtype).replace("torch.", "")
             self._loaded = True
-            print(f"[echo] model ready on {self.device} ({self.dtype_str})")
+            print(f"[echo] model ready on {self.adapter or self.device} ({self.dtype_str})")
 
     @staticmethod
     def _build_pipe(ckpt: str, dtype: Any):
@@ -234,10 +351,12 @@ class ImageEngine:
         return pipe
 
     @staticmethod
-    def _place_pipe(pipe: Any, device: Any, dtype: Any) -> None:
+    def _place_pipe(pipe: Any, device: Any, dtype: Any) -> str:
         kind = device_kind(device)
         if kind == "cuda" and settings.CPU_OFFLOAD:
             pipe.enable_model_cpu_offload()
+        elif kind == "directml":
+            _place_compute_modules(pipe, device)
         else:
             pipe.to(device)
 
@@ -245,12 +364,16 @@ class ImageEngine:
             pipe.enable_attention_slicing("max" if kind == "directml" else "auto")
         except Exception:
             pass
-        if settings.VAE_TILING:
+        vae_label = ""
+        if kind == "directml":
+            vae_label = _place_vae(pipe, device)
+        elif settings.VAE_TILING:
             for method in ("enable_vae_slicing", "enable_vae_tiling"):
                 try:
                     getattr(pipe, method)()
                 except Exception:
                     pass
+        return vae_label
 
     def _img2img_pipe(self):
         if self._img2img is None:

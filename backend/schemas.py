@@ -45,6 +45,7 @@ class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
     device: str
+    adapter: Optional[str] = None
     dtype: str
     base_model: str
     gguf: str

@@ -34,6 +34,16 @@ app.add_middleware(
 
 @app.on_event("startup")
 def _startup() -> None:
+    try:
+        from .device import list_directml_adapters, _pick_directml_index
+
+        adapters = list_directml_adapters()
+        if adapters:
+            index = _pick_directml_index(settings.DML_DEVICE)
+            name = next(label for idx, label in adapters if idx == index)
+            print(f"[echo] DirectML adapters: {adapters}; using {index} {name}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[echo] DirectML probe skipped ({exc})")
     if settings.PRELOAD:
         # Load the model in the background so the server still answers /health.
         threading.Thread(target=_safe_preload, daemon=True).start()
@@ -53,6 +63,7 @@ def health() -> HealthResponse:
         status="ok",
         model_loaded=engine.loaded,
         device=engine.device if engine.loaded else settings.DEVICE,
+        adapter=engine.adapter or None,
         dtype=engine.dtype_str if engine.loaded else settings.DTYPE,
         base_model=settings.MODEL_ID,
         gguf=settings.CHECKPOINT,

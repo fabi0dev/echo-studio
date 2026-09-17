@@ -97,6 +97,7 @@ Copy `.env.example` → `.env` and tweak. Highlights:
 | `ECHO_CHECKPOINT` | `models/dreamshaper-8.safetensors` | Local SD 1.5 checkpoint. |
 | `ECHO_CHECKPOINT_URL` | Lykon DreamShaper 8 pruned | Where the downloader pulls the weights from. |
 | `ECHO_DEVICE` | `auto` | `auto` → cuda → mps → DirectML → cpu. Force with `cuda`/`mps`/`directml`/`cpu`. |
+| `ECHO_DML_DEVICE` | `auto` | DirectML GPU. `auto` prefers the dedicated card (RX 6600 over Vega iGPU). Index or name also work (`1`, `6600`). |
 | `ECHO_DTYPE` | `auto` | `float32` on CPU/DirectML, `bfloat16` on CUDA/MPS. |
 | `ECHO_CPU_OFFLOAD` | `true` | Offload modules to CPU between steps (CUDA, saves VRAM). |
 | `ECHO_PRELOAD` | `false` | Load the model at boot instead of on first request. |

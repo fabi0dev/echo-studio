@@ -5,6 +5,18 @@ type StatusBadgeProps = {
   busy: boolean;
 };
 
+function gpuLabel(health: Health): string {
+  const adapter = health.adapter?.trim();
+  if (!adapter) {
+    return health.device;
+  }
+  return adapter
+    .replace(/^directml:\d+\s+/i, "")
+    .replace(/^AMD\s+/i, "")
+    .replace(/^NVIDIA\s+/i, "")
+    .replace(/^Intel\(R\)\s+/i, "");
+}
+
 function labelFor(health: Health | null, busy: boolean): { text: string; tone: "ok" | "bad" | "busy" | "idle" } {
   if (health === null) {
     return { text: "servidor offline", tone: "bad" };
@@ -19,7 +31,7 @@ function labelFor(health: Health | null, busy: boolean): { text: string; tone: "
     return { text: "gerando…", tone: "busy" };
   }
   if (health.model_loaded) {
-    return { text: `pronto · ${health.device} · ${health.dtype}`, tone: "ok" };
+    return { text: `pronto · ${gpuLabel(health)} · ${health.dtype}`, tone: "ok" };
   }
   return { text: "modelo não carregado", tone: "idle" };
 }

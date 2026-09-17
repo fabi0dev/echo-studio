@@ -9,6 +9,7 @@ export type Health = {
   status: string;
   model_loaded: boolean;
   device: string;
+  adapter?: string | null;
   dtype: string;
   base_model: string;
   gguf: string;

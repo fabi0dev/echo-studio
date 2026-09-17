@@ -55,6 +55,7 @@ class Settings:
     CHECKPOINT_URL: str = _get("ECHO_CHECKPOINT_URL", CHECKPOINT_URL)
 
     DEVICE: str = _get("ECHO_DEVICE", "auto").lower()
+    DML_DEVICE: str = _get("ECHO_DML_DEVICE", "auto")
     DTYPE: str = _get("ECHO_DTYPE", "auto").lower()
     CPU_OFFLOAD: bool = _get_bool("ECHO_CPU_OFFLOAD", True)
     VAE_TILING: bool = _get_bool("ECHO_VAE_TILING", True)
