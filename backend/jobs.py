@@ -83,6 +83,7 @@ class JobManager:
             job.progress = done / total if total else 0.0
 
         p = job.params
+        init_image = self._decode_image(p.get("init_image"))
         results = engine.generate(
             prompt=job.prompt,
             negative_prompt=p.get("negative_prompt"),
@@ -92,6 +93,8 @@ class JobManager:
             guidance=p["guidance"],
             seed=p.get("seed"),
             num_images=p["num_images"],
+            init_image=init_image,
+            strength=p.get("strength", 0.65),
             on_step=on_step,
         )
 
@@ -109,6 +112,19 @@ class JobManager:
         job.progress = 1.0
         job.state = "done"
         job.finished_at = time.time()
+
+    @staticmethod
+    def _decode_image(data):
+        """Decode a base64 (optionally data-URL) string into a PIL image."""
+        if not data:
+            return None
+        import base64
+        import io
+
+        if "," in data and data.strip().startswith("data:"):
+            data = data.split(",", 1)[1]
+        raw = base64.b64decode(data)
+        return Image.open(io.BytesIO(raw))
 
     @staticmethod
     def _save_with_metadata(image: "Image.Image", path, job: Job, seed: int) -> None:

@@ -45,7 +45,8 @@ def _resolve_dtype(requested: str, device: str):
 
 class ChromaEngine:
     def __init__(self) -> None:
-        self._pipe = None
+        self._pipe = None          # text-to-image
+        self._img2img = None       # image-to-image (shares components)
         self._lock = threading.Lock()          # serializes generation
         self._load_lock = threading.Lock()     # serializes model loading
         self.device: str = "?"
@@ -125,6 +126,19 @@ class ChromaEngine:
             self._loaded = True
             print(f"[echo] model ready on {device} ({self.dtype_str})")
 
+    def _img2img_pipe(self):
+        """Lazily build the image-to-image pipeline, reusing loaded components.
+
+        It shares the exact same module objects as the text-to-image pipeline
+        (transformer, VAE, text encoder, …), so it adds no extra VRAM and
+        inherits any CPU-offload hooks already attached to those modules.
+        """
+        if self._img2img is None:
+            from diffusers import ChromaImg2ImgPipeline
+
+            self._img2img = ChromaImg2ImgPipeline(**self._pipe.components)
+        return self._img2img
+
     # -------------------------------------------------------------- generate
     def generate(
         self,
@@ -137,9 +151,15 @@ class ChromaEngine:
         guidance: float,
         seed: Optional[int],
         num_images: int,
+        init_image: Optional["object"] = None,
+        strength: float = 0.65,
         on_step: Optional[Callable[[int, int], None]] = None,
     ) -> List["object"]:
-        """Run the diffusion loop. Returns a list of (PIL.Image, seed) tuples."""
+        """Run the diffusion loop. Returns a list of (PIL.Image, seed) tuples.
+
+        When ``init_image`` (a PIL image) is given, runs image-to-image with the
+        provided ``strength``; otherwise runs plain text-to-image.
+        """
         import torch
 
         self.load()
@@ -150,6 +170,12 @@ class ChromaEngine:
         steps = max(1, min(settings.MAX_STEPS, steps))
         num_images = max(1, min(settings.MAX_BATCH, num_images))
         neg = negative_prompt if negative_prompt is not None else settings.DEFAULT_NEGATIVE
+
+        is_img2img = init_image is not None
+        if is_img2img:
+            init_image = self._prepare_init_image(init_image, width, height)
+            pipe = self._img2img_pipe()
+            strength = max(0.05, min(1.0, strength))
 
         results = []
         with self._lock:
@@ -163,7 +189,7 @@ class ChromaEngine:
                         on_step(i * steps + step_index + 1, steps * num_images)
                     return cbk
 
-                out = self._pipe(
+                common = dict(
                     prompt=prompt,
                     negative_prompt=neg,
                     width=width,
@@ -174,8 +200,22 @@ class ChromaEngine:
                     num_images_per_prompt=1,
                     callback_on_step_end=_cb,
                 )
+                if is_img2img:
+                    out = pipe(image=init_image, strength=strength, **common)
+                else:
+                    out = self._pipe(**common)
                 results.append((out.images[0], img_seed))
         return results
+
+    @staticmethod
+    def _prepare_init_image(image, width: int, height: int):
+        """Convert to RGB and resize to the requested output canvas."""
+        image = image.convert("RGB")
+        if image.size != (width, height):
+            from PIL import Image
+
+            image = image.resize((width, height), Image.LANCZOS)
+        return image
 
 
 engine = ChromaEngine()

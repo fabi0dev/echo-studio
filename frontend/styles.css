@@ -89,14 +89,73 @@ main {
 
 /* Composer */
 .composer {
+  position: relative;
   background: var(--panel);
   border: 1px solid var(--stroke);
   border-radius: var(--radius);
   padding: 16px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(16px);
+  transition: border-color 0.15s;
 }
+.composer.dragover { border-color: var(--accent); }
+
+.composer-top {
+  display: flex;
+  gap: 14px;
+  align-items: stretch;
+}
+
+/* Uploader */
+.uploader { flex-shrink: 0; }
+.drop-empty {
+  width: 104px;
+  height: 104px;
+  border: 1.5px dashed var(--stroke-strong);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.02);
+  transition: all 0.15s;
+  text-align: center;
+}
+.drop-empty:hover { border-color: var(--accent); color: var(--text); background: rgba(124, 92, 255, 0.08); }
+.up-ico { font-size: 22px; line-height: 1; }
+.up-title { font-size: 13px; font-weight: 600; }
+.up-sub { font-size: 11px; opacity: 0.7; }
+
+.drop-filled {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--stroke-strong);
+}
+.drop-filled img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb-remove {
+  position: absolute;
+  top: 5px; right: 5px;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+  backdrop-filter: blur(4px);
+}
+.thumb-remove:hover { background: var(--accent-2); }
+
 #prompt {
+  flex: 1;
   width: 100%;
   background: transparent;
   border: none;
@@ -107,7 +166,39 @@ main {
   outline: none;
   font-family: inherit;
   padding: 6px 4px;
+  min-height: 104px;
 }
+
+/* Strength */
+.strength-row {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: rgba(124, 92, 255, 0.08);
+  border: 1px solid rgba(124, 92, 255, 0.25);
+  border-radius: 12px;
+  display: grid;
+  gap: 8px;
+}
+.strength-row label { font-size: 13px; color: var(--muted); }
+.strength-row label b { color: var(--accent-3); }
+.strength-row .hint { font-size: 11px; color: #6a6a78; }
+
+/* Drop overlay */
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  background: rgba(124, 92, 255, 0.18);
+  border: 2px dashed var(--accent);
+  display: none;
+  place-items: center;
+  font-weight: 600;
+  color: #fff;
+  pointer-events: none;
+  z-index: 3;
+  backdrop-filter: blur(2px);
+}
+.composer.dragover .drop-overlay { display: grid; }
 #prompt::placeholder { color: #6a6a78; }
 
 .composer-row {

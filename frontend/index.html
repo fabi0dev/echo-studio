@@ -26,9 +26,33 @@
   </header>
 
   <main>
-    <!-- Composer -->
-    <section class="composer">
-      <textarea id="prompt" rows="2" placeholder="Descreva o que você quer imaginar…  (ex.: uma raposa de neon numa floresta chuvosa à noite, cinematográfico)"></textarea>
+    <!-- Composer (also the drop target) -->
+    <section class="composer" id="composer">
+      <div class="composer-top">
+        <!-- Upload / reference image -->
+        <div class="uploader" id="uploader">
+          <div class="drop-empty" id="dropEmpty">
+            <span class="up-ico">⬆</span>
+            <span class="up-title">Imagem</span>
+            <span class="up-sub">arraste ou clique</span>
+          </div>
+          <div class="drop-filled" id="dropFilled" hidden>
+            <img id="refThumb" alt="referência" />
+            <button class="thumb-remove" id="removeImg" title="Remover imagem">✕</button>
+          </div>
+          <input type="file" id="fileInput" accept="image/*" hidden />
+        </div>
+
+        <!-- Prompt -->
+        <textarea id="prompt" rows="3" placeholder="Descreva o que você quer imaginar…  (ex.: uma raposa de neon numa floresta chuvosa à noite, cinematográfico)"></textarea>
+      </div>
+
+      <!-- Strength (only in img2img) -->
+      <div class="strength-row" id="strengthRow" hidden>
+        <label>Influência da imagem <b id="strengthVal">65%</b></label>
+        <input id="strength" type="range" min="10" max="100" value="65" />
+        <span class="hint">baixo = fiel à original · alto = mais criativo</span>
+      </div>
 
       <div class="composer-row">
         <div class="ratios" id="ratios">
@@ -53,7 +77,7 @@
 
         <button class="btn-ghost" id="advBtn" title="Ajustes avançados">⚙</button>
         <button class="btn-generate" id="generate">
-          <span class="gen-label">Imaginar</span>
+          <span class="gen-label">Gerar</span>
           <span class="spinner" hidden></span>
         </button>
       </div>
@@ -79,6 +103,8 @@
           </div>
         </div>
       </div>
+
+      <div class="drop-overlay" id="dropOverlay">Solte a imagem aqui</div>
     </section>
 
     <!-- Progress -->
@@ -96,7 +122,7 @@
       <button class="btn-ghost small" id="refresh">↻ atualizar</button>
     </section>
     <section class="gallery" id="gallery"></section>
-    <p class="empty" id="empty" hidden>Nada por aqui ainda. Escreva um prompt e clique em <b>Imaginar</b>.</p>
+    <p class="empty" id="empty" hidden>Nada por aqui ainda. Escreva um prompt e clique em <b>Gerar</b>.</p>
   </main>
 
   <!-- Lightbox -->

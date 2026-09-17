@@ -15,6 +15,10 @@ class GenerateRequest(BaseModel):
     guidance: float = Field(default=3.0, ge=0.0, le=20.0)
     seed: Optional[int] = Field(default=None, ge=0, le=2**32 - 1)
     num_images: int = Field(default=1, ge=1, le=8)
+    # Optional reference image for image-to-image (base64 data URL or raw base64).
+    init_image: Optional[str] = Field(default=None, max_length=30_000_000)
+    # How much to transform the reference image (0 = keep, 1 = ignore).
+    strength: float = Field(default=0.65, ge=0.05, le=1.0)
 
 
 class JobImage(BaseModel):

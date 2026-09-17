@@ -88,6 +88,8 @@ def generate(req: GenerateRequest) -> JobStatus:
         "guidance": req.guidance,
         "seed": req.seed,
         "num_images": min(req.num_images, settings.MAX_BATCH),
+        "init_image": req.init_image,
+        "strength": req.strength,
     }
     job = jobs.submit(req.prompt.strip(), params)
     return _to_status(job)

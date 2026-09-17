@@ -6,6 +6,7 @@ const state = {
   height: 1024,
   count: 1,
   polling: null,
+  initImage: null, // base64 data URL of the reference image, or null
 };
 
 // ---- Status ---------------------------------------------------------------
@@ -64,11 +65,78 @@ $("prompt").addEventListener("keydown", (e) => {
 $("generate").addEventListener("click", generate);
 $("refresh").addEventListener("click", loadGallery);
 
+$("strength").addEventListener("input", (e) => ($("strengthVal").textContent = e.target.value + "%"));
+
+// ---- Image upload / drag & drop ------------------------------------------
+const MAX_UPLOAD_MB = 12;
+
+$("dropEmpty").addEventListener("click", () => $("fileInput").click());
+$("fileInput").addEventListener("change", (e) => {
+  if (e.target.files && e.target.files[0]) loadImageFile(e.target.files[0]);
+  e.target.value = "";
+});
+$("removeImg").addEventListener("click", clearImage);
+
+const composer = $("composer");
+["dragenter", "dragover"].forEach((ev) =>
+  composer.addEventListener(ev, (e) => {
+    e.preventDefault();
+    composer.classList.add("dragover");
+  })
+);
+["dragleave", "drop"].forEach((ev) =>
+  composer.addEventListener(ev, (e) => {
+    e.preventDefault();
+    if (ev === "dragleave" && composer.contains(e.relatedTarget)) return;
+    composer.classList.remove("dragover");
+  })
+);
+composer.addEventListener("drop", (e) => {
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f && f.type.startsWith("image/")) loadImageFile(f);
+});
+
+// Paste an image straight from the clipboard.
+document.addEventListener("paste", (e) => {
+  const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith("image/"));
+  if (item) loadImageFile(item.getAsFile());
+});
+
+function loadImageFile(file) {
+  if (!file.type.startsWith("image/")) return;
+  if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+    alert(`Imagem muito grande (máx. ${MAX_UPLOAD_MB} MB).`);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    state.initImage = reader.result; // data URL
+    $("refThumb").src = reader.result;
+    $("dropEmpty").hidden = true;
+    $("dropFilled").hidden = false;
+    $("strengthRow").hidden = false;
+    $("generate").querySelector(".gen-label").textContent = "Transformar";
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearImage() {
+  state.initImage = null;
+  $("refThumb").src = "";
+  $("dropEmpty").hidden = false;
+  $("dropFilled").hidden = true;
+  $("strengthRow").hidden = true;
+  $("generate").querySelector(".gen-label").textContent = "Gerar";
+}
+
 // ---- Generate -------------------------------------------------------------
 function setBusy(busy) {
   const btn = $("generate");
+  const img = !!state.initImage;
   btn.disabled = busy;
-  btn.querySelector(".gen-label").textContent = busy ? "Imaginando…" : "Imaginar";
+  btn.querySelector(".gen-label").textContent = busy
+    ? (img ? "Transformando…" : "Gerando…")
+    : (img ? "Transformar" : "Gerar");
   btn.querySelector(".spinner").hidden = !busy;
   $("statusDot").className = busy ? "dot busy" : "dot";
 }
@@ -88,6 +156,8 @@ async function generate() {
     guidance: +$("guidance").value,
     seed: $("seed").value === "" ? null : +$("seed").value,
     num_images: state.count,
+    init_image: state.initImage,
+    strength: state.initImage ? +$("strength").value / 100 : undefined,
   };
 
   setBusy(true);
