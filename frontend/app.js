@@ -109,15 +109,36 @@ function loadImageFile(file) {
     return;
   }
   const reader = new FileReader();
-  reader.onload = () => {
-    state.initImage = reader.result; // data URL
-    $("refThumb").src = reader.result;
-    $("dropEmpty").hidden = true;
-    $("dropFilled").hidden = false;
-    $("strengthRow").hidden = false;
-    $("generate").querySelector(".gen-label").textContent = "Transformar";
-  };
+  reader.onload = () => setReference(reader.result);
   reader.readAsDataURL(file);
+}
+
+// Apply a data URL as the active reference image (used by upload & gallery).
+function setReference(dataUrl) {
+  state.initImage = dataUrl;
+  $("refThumb").src = dataUrl;
+  $("dropEmpty").hidden = true;
+  $("dropFilled").hidden = false;
+  $("strengthRow").hidden = false;
+  $("generate").querySelector(".gen-label").textContent = "Transformar";
+}
+
+// Load a gallery image (served URL) as the reference, then scroll up to compose.
+async function useAsReference(url) {
+  try {
+    const resp = await fetch(url);
+    const blob = await resp.blob();
+    const reader = new FileReader();
+    reader.onload = () => {
+      setReference(reader.result);
+      $("lightbox").hidden = true;
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      $("prompt").focus();
+    };
+    reader.readAsDataURL(blob);
+  } catch (e) {
+    alert("Não consegui carregar a imagem: " + e.message);
+  }
 }
 
 function clearImage() {
@@ -263,9 +284,15 @@ async function loadGallery() {
       const seed = (img.filename.match(/_(\d+)\.png$/) || [])[1] || "";
       const c = document.createElement("div");
       c.className = "card";
-      c.innerHTML = `<img loading="lazy" src="${img.url}" alt="" />` +
-        (seed ? `<span class="seed-tag">seed ${seed}</span>` : "");
-      c.addEventListener("click", () => openLightbox(img.url, seed));
+      c.innerHTML =
+        `<img loading="lazy" src="${img.url}" alt="" />` +
+        (seed ? `<span class="seed-tag">seed ${seed}</span>` : "") +
+        `<button class="use-ref" title="Usar como referência (img2img)">⧉ referência</button>`;
+      c.querySelector("img").addEventListener("click", () => openLightbox(img.url, seed));
+      c.querySelector(".use-ref").addEventListener("click", (e) => {
+        e.stopPropagation();
+        useAsReference(img.url);
+      });
       g.appendChild(c);
     }
   } catch {
@@ -278,7 +305,12 @@ function openLightbox(url, seed) {
   $("lbImg").src = url;
   $("lbMeta").innerHTML =
     (seed ? `<span>seed <b>${seed}</b></span>` : "") +
+    `<a href="#" id="lbUseRef">⧉ usar como referência</a>` +
     `<a href="${url}" download>⬇ baixar PNG</a>`;
+  $("lbUseRef").addEventListener("click", (e) => {
+    e.preventDefault();
+    useAsReference(url);
+  });
   $("lightbox").hidden = false;
 }
 $("lbClose").addEventListener("click", () => ($("lightbox").hidden = true));
