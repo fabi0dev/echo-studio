@@ -13,8 +13,18 @@ if [ ! -d "$VENV" ]; then
   source "$VENV/bin/activate"
   echo "→ upgrading pip"
   pip install --upgrade pip
-  echo "→ NOTE: install the torch build for YOUR hardware first (see README)."
-  echo "  (skipping torch here; installing the rest)"
+
+  # Install the right torch build: CUDA if an NVIDIA GPU is present, else default
+  # (CPU on Linux, MPS-capable build on macOS).
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    echo "→ NVIDIA GPU detected: installing torch (CUDA 12.1)"
+    pip install torch --index-url https://download.pytorch.org/whl/cu121
+  else
+    echo "→ no NVIDIA GPU: installing default torch (CPU / Apple MPS)"
+    pip install torch
+  fi
+
+  echo "→ installing dependencies"
   pip install -r requirements.txt
 else
   # shellcheck disable=SC1091
@@ -24,7 +34,7 @@ fi
 # Fetch the Chroma Q4 model if it isn't there yet.
 if [ ! -f "models/chroma-q4.gguf" ] && [ -z "${ECHO_CHROMA_GGUF:-}" ]; then
   echo "→ Chroma Q4 model not found — downloading…"
-  "$PY" scripts/download_models.py
+  python scripts/download_models.py
 fi
 
 HOST="${ECHO_HOST:-0.0.0.0}"

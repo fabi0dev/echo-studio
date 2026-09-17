@@ -20,49 +20,62 @@ needs a real GPU. Do the setup below on the target machine.
 
 | Setup | VRAM | Notes |
 |-------|------|-------|
-| NVIDIA GPU (Ampere/Ada) | **8–12 GB+** | Best path. Q4 + `enable_model_cpu_offload` fits ~8 GB. |
+| **Windows + NVIDIA GPU** | **8–12 GB+** | Recommended. `run.bat` auto-installs the CUDA build. |
+| Linux + NVIDIA GPU | 8–12 GB+ | Same, via `run.sh`. Q4 + `enable_model_cpu_offload` fits ~8 GB. |
 | Apple Silicon (M-series) | 16 GB+ unified | Works via `mps`, slower; GGUF dequant on MPS can be finicky. |
-| CPU only | — | Technically runs, but a single image can take *many minutes*. |
+| CPU only (any OS) | — | Technically runs, but a single image can take *many minutes*. |
 
 You also need ~15–20 GB free disk (Q4 transformer ≈ 5 GB, T5 text encoder + VAE ≈ 10 GB).
 
 ---
 
-## 🚀 Quick start (target machine)
+## 🚀 Quick start
 
-### 1. Install PyTorch for your hardware *first*
-`requirements.txt` deliberately does **not** pin a torch build — pick the right one:
+You need **Python 3.10+** installed first. Everything else (virtualenv, the
+right PyTorch build, dependencies and the ~5 GB model) is installed automatically.
 
-```bash
-# NVIDIA CUDA 12.1
-pip install torch --index-url https://download.pytorch.org/whl/cu121
+### 🪟 Windows
 
-# Apple Silicon / CPU
-pip install torch
-```
+1. Install Python from <https://www.python.org/downloads/> — **check "Add
+   python.exe to PATH"** during install.
+2. **Double-click `run.bat`.**
 
-### 2. Install the rest + fetch the model + run
+That's it. On the first run it detects your GPU, installs the correct PyTorch
+(CUDA if you have an NVIDIA GPU, otherwise CPU), installs everything, downloads
+the model, then starts the app and opens your browser at
+**http://localhost:8000**. Later runs just start the app.
+
+> Prefer to install and start separately? Double-click **`setup.bat`** once,
+> then **`run.bat`** whenever you want to use it.
+>
+> If Windows SmartScreen blocks the script, click *More info → Run anyway*, or
+> run in PowerShell: `powershell -ExecutionPolicy Bypass -File scripts\setup.ps1`.
+
+### 🍎 macOS / 🐧 Linux
+
 ```bash
 ./run.sh
 ```
-`run.sh` creates a `.venv`, installs `requirements.txt`, downloads the Chroma Q4
-model into `models/chroma-q4.gguf` (first run only), then starts the server.
-
-Then open **http://localhost:8000**.
+Creates `.venv`, installs the right torch build (CUDA if an NVIDIA GPU is
+present, else CPU/Apple-MPS), installs deps, downloads the model, and serves at
+**http://localhost:8000**.
 
 <details>
-<summary>Prefer manual steps?</summary>
+<summary>Prefer manual steps? (any OS)</summary>
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install torch --index-url https://download.pytorch.org/whl/cu121   # your build
+python -m venv .venv
+# Windows:  .venv\Scripts\activate
+# mac/linux: source .venv/bin/activate
+pip install --upgrade pip
+pip install torch --index-url https://download.pytorch.org/whl/cu121   # NVIDIA; or plain "pip install torch" for CPU/Mac
 pip install -r requirements.txt
 python scripts/download_models.py            # downloads Chroma Q4 + warms base repo
 uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 </details>
 
-### 3. (Optional) Docker — NVIDIA
+### 🐳 Docker — NVIDIA (Linux / WSL2)
 ```bash
 docker build -t echo-studio .
 docker run --gpus all -p 8000:8000 \
@@ -135,7 +148,13 @@ Generation is serialized by a lock (one GPU = one job at a time); requests queue
 ---
 
 ## 🩹 Troubleshooting
-- **"Chroma GGUF model is missing"** → run `python scripts/download_models.py`.
+- **Windows: "python was not found"** → install Python from python.org and tick
+  *Add python.exe to PATH*, then re-run `run.bat`. (The Microsoft Store alias can
+  interfere — an actual python.org install is most reliable.)
+- **Windows: script is blocked** → run `powershell -ExecutionPolicy Bypass -File
+  scripts\setup.ps1`, or SmartScreen → *More info → Run anyway*.
+- **"Chroma GGUF model is missing"** → run `python scripts/download_models.py`
+  (or on Windows, `.venv\Scripts\python scripts\download_models.py`).
 - **CUDA out of memory** → keep `ECHO_CPU_OFFLOAD=true`, lower resolution
   (try 832×1216), reduce batch, or use a smaller side via `ECHO_MAX_SIDE`.
 - **`GGUFQuantizationConfig` import error** → `pip install -U diffusers gguf`

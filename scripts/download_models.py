@@ -56,10 +56,7 @@ def download(url: str, dest: Path) -> None:
             filename = file_part.split("/", 1)[1]  # strip the "main/" ref
             print(f"↓ hf_hub_download {repo_id} :: {filename}")
             cached = hf_hub_download(repo_id=repo_id, filename=filename)
-            Path(dest).write_bytes(b"")  # touch
-            os.remove(dest)
-            os.symlink(cached, dest) if hasattr(os, "symlink") else _copy(cached, dest)
-            print(f"✓ linked -> {dest}")
+            _link_or_copy(cached, dest)
             return
     except Exception as exc:  # noqa: BLE001 - fall back to plain HTTP
         print(f"  (huggingface_hub unavailable/failed: {exc}; using plain download)")
@@ -85,10 +82,23 @@ def download(url: str, dest: Path) -> None:
     print(f"✓ saved -> {dest} ({human(dest.stat().st_size)})")
 
 
-def _copy(src: str, dest: Path) -> None:
+def _link_or_copy(src: str, dest: Path) -> None:
+    """Expose the cached file at `dest` cross-platform.
+
+    Tries a hardlink first (instant, no extra disk), then falls back to a plain
+    copy. Symlinks are avoided because they need admin/developer mode on Windows.
+    """
     import shutil
 
-    shutil.copyfile(src, dest)
+    try:
+        if dest.exists():
+            dest.unlink()
+        os.link(src, dest)  # hardlink; works on the same NTFS/APFS/ext volume
+        print(f"✓ linked -> {dest}")
+    except OSError:
+        print(f"  (hardlink not possible; copying ~5 GB, please wait…)")
+        shutil.copyfile(src, dest)
+        print(f"✓ copied -> {dest}")
 
 
 def warm_base_repo() -> None:
