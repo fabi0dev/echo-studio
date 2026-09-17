@@ -112,10 +112,47 @@ def gallery(limit: int = 60) -> dict:
     )[:limit]
     return {
         "images": [
-            {"url": f"/outputs/{f.name}", "filename": f.name}
+            {"url": f"/outputs/{f.name}", "filename": f.name, **_read_png_meta(f)}
             for f in files
         ]
     }
+
+
+def _read_png_meta(path) -> dict:
+    """Pull the generation params we embedded when saving the PNG."""
+    from PIL import Image
+
+    def _num(val, cast):
+        try:
+            return cast(val)
+        except (TypeError, ValueError):
+            return None
+
+    # Seed from filename as a fallback (…_<seed>.png).
+    import re
+
+    m = re.search(r"_(\d+)\.png$", path.name)
+    meta = {
+        "prompt": None,
+        "negative_prompt": None,
+        "seed": int(m.group(1)) if m else None,
+        "steps": None,
+        "guidance": None,
+    }
+    try:
+        with Image.open(path) as im:
+            t = getattr(im, "text", {}) or {}
+        if t.get("prompt"):
+            meta["prompt"] = t["prompt"]
+        if t.get("negative_prompt"):
+            meta["negative_prompt"] = t["negative_prompt"]
+        if t.get("seed") is not None:
+            meta["seed"] = _num(t["seed"], int) or meta["seed"]
+        meta["steps"] = _num(t.get("steps"), int)
+        meta["guidance"] = _num(t.get("guidance"), float)
+    except Exception:  # noqa: BLE001 - metadata is best-effort
+        pass
+    return meta
 
 
 def _to_status(job) -> JobStatus:

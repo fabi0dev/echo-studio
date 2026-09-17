@@ -123,6 +123,32 @@ function setReference(dataUrl) {
   $("generate").querySelector(".gen-label").textContent = "Transformar";
 }
 
+// Reuse the prompt + seed (+ steps/guidance/negative) from a gallery image.
+function reuseParams(img) {
+  if (img.prompt) $("prompt").value = img.prompt;
+  if (img.negative_prompt != null) $("negative").value = img.negative_prompt;
+  if (img.seed != null) $("seed").value = img.seed;
+  if (img.steps != null) {
+    $("steps").value = img.steps;
+    $("stepsVal").textContent = img.steps;
+  }
+  if (img.guidance != null) {
+    $("guidance").value = img.guidance;
+    $("guidanceVal").textContent = (+img.guidance).toFixed(1);
+  }
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  $("prompt").focus();
+  flashComposer();
+}
+
+// Brief highlight so it's clear the composer was populated.
+function flashComposer() {
+  const el = $("composer");
+  el.classList.remove("flash");
+  void el.offsetWidth; // restart animation
+  el.classList.add("flash");
+}
+
 // Load a gallery image (served URL) as the reference, then scroll up to compose.
 async function useAsReference(url) {
   try {
@@ -281,17 +307,26 @@ async function loadGallery() {
     }
     $("empty").hidden = true;
     for (const img of data.images) {
-      const seed = (img.filename.match(/_(\d+)\.png$/) || [])[1] || "";
+      const seed = img.seed ?? (img.filename.match(/_(\d+)\.png$/) || [])[1] ?? "";
       const c = document.createElement("div");
       c.className = "card";
+      const canReuse = img.prompt || img.seed != null;
       c.innerHTML =
         `<img loading="lazy" src="${img.url}" alt="" />` +
-        (seed ? `<span class="seed-tag">seed ${seed}</span>` : "") +
-        `<button class="use-ref" title="Usar como referência (img2img)">⧉ referência</button>`;
+        (seed !== "" ? `<span class="seed-tag">seed ${seed}</span>` : "") +
+        `<div class="card-actions">` +
+          (canReuse ? `<button class="card-btn reuse" title="Reusar prompt e seed">⤺ reusar</button>` : "") +
+          `<button class="card-btn use-ref" title="Usar como referência (img2img)">⧉ referência</button>` +
+        `</div>`;
       c.querySelector("img").addEventListener("click", () => openLightbox(img.url, seed));
       c.querySelector(".use-ref").addEventListener("click", (e) => {
         e.stopPropagation();
         useAsReference(img.url);
+      });
+      const reuseBtn = c.querySelector(".reuse");
+      if (reuseBtn) reuseBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        reuseParams(img);
       });
       g.appendChild(c);
     }
