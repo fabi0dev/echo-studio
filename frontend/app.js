@@ -123,11 +123,12 @@ function setReference(dataUrl) {
   $("generate").querySelector(".gen-label").textContent = "Transformar";
 }
 
-// Reuse the prompt + seed (+ steps/guidance/negative) from a gallery image.
-function reuseParams(img) {
+// Apply prompt + steps/guidance/negative from an image. `keepSeed` controls
+// whether the original seed is reused (reuse) or cleared for a random one (vary).
+function applyParams(img, keepSeed) {
   if (img.prompt) $("prompt").value = img.prompt;
   if (img.negative_prompt != null) $("negative").value = img.negative_prompt;
-  if (img.seed != null) $("seed").value = img.seed;
+  $("seed").value = keepSeed && img.seed != null ? img.seed : "";
   if (img.steps != null) {
     $("steps").value = img.steps;
     $("stepsVal").textContent = img.steps;
@@ -136,9 +137,22 @@ function reuseParams(img) {
     $("guidance").value = img.guidance;
     $("guidanceVal").textContent = (+img.guidance).toFixed(1);
   }
+}
+
+// Reuse the exact params (same seed) — populates the composer to edit & run.
+function reuseParams(img) {
+  applyParams(img, true);
   window.scrollTo({ top: 0, behavior: "smooth" });
   $("prompt").focus();
   flashComposer();
+}
+
+// Variation: same prompt/params but a fresh random seed — runs immediately.
+function varyParams(img) {
+  applyParams(img, false);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  flashComposer();
+  generate();
 }
 
 // Brief highlight so it's clear the composer was populated.
@@ -316,7 +330,8 @@ async function loadGallery() {
         (seed !== "" ? `<span class="seed-tag">seed ${seed}</span>` : "") +
         `<div class="card-actions">` +
           (canReuse ? `<button class="card-btn reuse" title="Reusar prompt e seed">⤺ reusar</button>` : "") +
-          `<button class="card-btn use-ref" title="Usar como referência (img2img)">⧉ referência</button>` +
+          (img.prompt ? `<button class="card-btn vary" title="Variação: mesmo prompt, seed aleatória">⚄ variar</button>` : "") +
+          `<button class="card-btn use-ref" title="Usar como referência (img2img)">⧉ ref</button>` +
         `</div>`;
       c.querySelector("img").addEventListener("click", () => openLightbox(img.url, seed));
       c.querySelector(".use-ref").addEventListener("click", (e) => {
@@ -327,6 +342,11 @@ async function loadGallery() {
       if (reuseBtn) reuseBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         reuseParams(img);
+      });
+      const varyBtn = c.querySelector(".vary");
+      if (varyBtn) varyBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        varyParams(img);
       });
       g.appendChild(c);
     }
