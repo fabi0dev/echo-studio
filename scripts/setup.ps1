@@ -1,7 +1,13 @@
+param(
+    # Which PyTorch build to install: cu118 | cu121 | cu124 | cpu | auto.
+    # Omit to be asked interactively (or set $env:ECHO_CUDA).
+    [string]$Cuda = ""
+)
+
 # Echo Studio — Windows setup.
-# Creates a virtualenv, installs the right PyTorch build (CUDA if an NVIDIA GPU
-# is detected, otherwise CPU), installs dependencies, and downloads the model.
-# Run via setup.bat, or:  powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+# Creates a virtualenv, installs the chosen PyTorch build, installs
+# dependencies, and downloads the model.
+# Run via setup.bat, or:  powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -Cuda cu121
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -30,16 +36,44 @@ if (-not (Test-Path $venvPy)) {
 Write-Host "-> atualizando pip" -ForegroundColor Yellow
 & $venvPy -m pip install --upgrade pip
 
-# --- Detect GPU and install torch -----------------------------------------
-$hasGpu = [bool](Get-Command nvidia-smi -ErrorAction SilentlyContinue)
-if ($hasGpu) {
-    Write-Host "-> GPU NVIDIA detectada: instalando PyTorch (CUDA 12.1)" -ForegroundColor Green
-    & $venvPy -m pip install torch --index-url https://download.pytorch.org/whl/cu121
-} else {
-    Write-Host "-> Nenhuma GPU NVIDIA detectada: instalando PyTorch (CPU)" -ForegroundColor Yellow
-    Write-Host "   (a geracao sera LENTA sem GPU)" -ForegroundColor Yellow
-    & $venvPy -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+# --- Decide which PyTorch build to install ---------------------------------
+function Get-TorchIndex([string]$choice) {
+    switch ($choice.ToLower()) {
+        "cu118" { "https://download.pytorch.org/whl/cu118" }
+        "cu121" { "https://download.pytorch.org/whl/cu121" }
+        "cu124" { "https://download.pytorch.org/whl/cu124" }
+        "cpu"   { "https://download.pytorch.org/whl/cpu" }
+        default { $null }
+    }
 }
+
+# Simple by default: auto-detect. Advanced override via -Cuda or $env:ECHO_CUDA
+# (cu118 | cu121 | cu124 | cpu). No prompts.
+$choice = $Cuda
+if (-not $choice) { $choice = $env:ECHO_CUDA }
+if ($choice -and $choice.ToLower() -eq "auto") { $choice = "" }
+
+if (-not $choice) {
+    if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+        $choice = "cu121"  # sensible default for NVIDIA GPUs
+    } else {
+        Write-Host "-> Nenhuma GPU NVIDIA detectada." -ForegroundColor Yellow
+        $choice = "cpu"
+    }
+}
+
+$index = Get-TorchIndex $choice
+if (-not $index) {
+    Write-Host "Valor de CUDA invalido: '$choice' (use cu118|cu121|cu124|cpu)." -ForegroundColor Red
+    exit 1
+}
+
+if ($choice -eq "cpu") {
+    Write-Host "-> instalando PyTorch (CPU) — a geracao sera LENTA sem GPU" -ForegroundColor Yellow
+} else {
+    Write-Host "-> instalando PyTorch ($choice)" -ForegroundColor Green
+}
+& $venvPy -m pip install torch --index-url $index
 
 # --- Install the rest ------------------------------------------------------
 Write-Host "-> instalando dependencias" -ForegroundColor Yellow

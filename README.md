@@ -50,6 +50,10 @@ the model, then starts the app and opens your browser at
 >
 > If Windows SmartScreen blocks the script, click *More info → Run anyway*, or
 > run in PowerShell: `powershell -ExecutionPolicy Bypass -File scripts\setup.ps1`.
+>
+> **Advanced (optional):** to force a specific CUDA build instead of the default
+> (CUDA 12.1), run `setup.bat cu118` (or `cu124` / `cpu`). No need for the normal
+> case — it's picked automatically.
 
 ### 🍎 macOS / 🐧 Linux
 
@@ -58,7 +62,7 @@ the model, then starts the app and opens your browser at
 ```
 Creates `.venv`, installs the right torch build (CUDA if an NVIDIA GPU is
 present, else CPU/Apple-MPS), installs deps, downloads the model, and serves at
-**http://localhost:8000**.
+**http://localhost:8000**. To force a CUDA build: `ECHO_CUDA=cu118 ./run.sh`.
 
 <details>
 <summary>Prefer manual steps? (any OS)</summary>

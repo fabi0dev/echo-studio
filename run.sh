@@ -14,15 +14,24 @@ if [ ! -d "$VENV" ]; then
   echo "→ upgrading pip"
   pip install --upgrade pip
 
-  # Install the right torch build: CUDA if an NVIDIA GPU is present, else default
-  # (CPU on Linux, MPS-capable build on macOS).
-  if command -v nvidia-smi >/dev/null 2>&1; then
-    echo "→ NVIDIA GPU detected: installing torch (CUDA 12.1)"
-    pip install torch --index-url https://download.pytorch.org/whl/cu121
-  else
-    echo "→ no NVIDIA GPU: installing default torch (CPU / Apple MPS)"
-    pip install torch
-  fi
+  # Install the right torch build automatically. Advanced override via
+  # ECHO_CUDA=cu118|cu121|cu124|cpu (optional, no prompts).
+  case "${ECHO_CUDA:-}" in
+    cu118|cu121|cu124)
+      echo "→ installing torch ($ECHO_CUDA)"
+      pip install torch --index-url "https://download.pytorch.org/whl/$ECHO_CUDA" ;;
+    cpu)
+      echo "→ installing torch (CPU)"
+      pip install torch --index-url https://download.pytorch.org/whl/cpu ;;
+    *)
+      if command -v nvidia-smi >/dev/null 2>&1; then
+        echo "→ NVIDIA GPU detected: installing torch (CUDA 12.1)"
+        pip install torch --index-url https://download.pytorch.org/whl/cu121
+      else
+        echo "→ no NVIDIA GPU: installing default torch (CPU / Apple MPS)"
+        pip install torch
+      fi ;;
+  esac
 
   echo "→ installing dependencies"
   pip install -r requirements.txt
