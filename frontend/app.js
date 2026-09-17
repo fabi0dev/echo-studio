@@ -327,12 +327,18 @@ async function loadGallery() {
       const canReuse = img.prompt || img.seed != null;
       c.innerHTML =
         `<img loading="lazy" src="${img.url}" alt="" />` +
+        (img.prompt ? `<div class="card-prompt"></div>` : "") +
         (seed !== "" ? `<span class="seed-tag">seed ${seed}</span>` : "") +
         `<div class="card-actions">` +
           (canReuse ? `<button class="card-btn reuse" title="Reusar prompt e seed">⤺ reusar</button>` : "") +
           (img.prompt ? `<button class="card-btn vary" title="Variação: mesmo prompt, seed aleatória">⚄ variar</button>` : "") +
           `<button class="card-btn use-ref" title="Usar como referência (img2img)">⧉ ref</button>` +
         `</div>`;
+      if (img.prompt) {
+        // Use textContent so the prompt can't break the markup.
+        c.querySelector(".card-prompt").textContent = img.prompt;
+        c.title = img.prompt; // full prompt as a native tooltip
+      }
       c.querySelector("img").addEventListener("click", () => openLightbox(img.url, seed));
       c.querySelector(".use-ref").addEventListener("click", (e) => {
         e.stopPropagation();
